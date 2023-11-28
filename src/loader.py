@@ -89,7 +89,7 @@ class SlackDataLoader:
 
         # specify path to get json files
         combined = []
-        for json_file in glob.glob(f"{path_channel}*.json"):
+        for json_file in glob.glob(f"{path_channel}/all-week*/*.json"):
             with open(json_file, 'r', encoding="utf8") as slack_data:
                 combined.append(slack_data)
 
