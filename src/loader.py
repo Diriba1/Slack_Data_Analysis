@@ -71,9 +71,186 @@ class SlackDataLoader:
         for user in self.users:
             userNamesById[user['id']] = user['name']
             userIdsByName[user['name']] = user['id']
-        return userNamesById, userIdsByName        
+        return userNamesById, userIdsByName  
 
 
+                
+        # combine all json file in all-weeks8-9
+    def slack_parser(path_channel):
+        """ parse slack data to extract useful informations from the json file
+            step of execution
+            1. Import the required modules
+            2. read all json file from the provided path
+            3. combine all json files in the provided path
+            4. extract all required informations from the slack data
+            5. convert to dataframe and merge all
+            6. reset the index and return dataframe
+        """
+
+        # specify path to get json files
+        combined = []
+        for json_file in glob.glob(f"{path_channel}*.json"):
+            with open(json_file, 'r', encoding="utf8") as slack_data:
+                combined.append(slack_data)
+
+        # loop through all json files and extract required informations
+        dflist = []
+        for slack_data in combined:
+
+            msg_type, msg_content, sender_id, time_msg, msg_dist, time_thread_st, reply_users, \
+            reply_count, reply_users_count, tm_thread_end = [],[],[],[],[],[],[],[],[],[]
+
+            for row in slack_data:
+                if 'bot_id' in row.keys():
+                    continue
+                else:
+                    msg_type.append(row['type'])
+                    msg_content.append(row['text'])
+                    if 'user_profile' in row.keys(): sender_id.append(row['user_profile']['real_name'])
+                    else: sender_id.append('Not provided')
+                    time_msg.append(row['ts'])
+                    if 'blocks' in row.keys() and len(row['blocks'][0]['elements'][0]['elements']) != 0 :
+                        msg_dist.append(row['blocks'][0]['elements'][0]['elements'][0]['type'])
+                    else: msg_dist.append('reshared')
+                    if 'thread_ts' in row.keys():
+                        time_thread_st.append(row['thread_ts'])
+                    else:
+                        time_thread_st.append(0)
+                    if 'reply_users' in row.keys(): reply_users.append(",".join(row['reply_users'])) 
+                    else:    reply_users.append(0)
+                    if 'reply_count' in row.keys():
+                        reply_count.append(row['reply_count'])
+                        reply_users_count.append(row['reply_users_count'])
+                        tm_thread_end.append(row['latest_reply'])
+                    else:
+                        reply_count.append(0)
+                        reply_users_count.append(0)
+                        tm_thread_end.append(0)
+            data = zip(msg_type, msg_content, sender_id, time_msg, msg_dist, time_thread_st,
+            reply_count, reply_users_count, reply_users, tm_thread_end)
+            columns = ['msg_type', 'msg_content', 'sender_name', 'msg_sent_time', 'msg_dist_type',
+            'time_thread_start', 'reply_count', 'reply_users_count', 'reply_users', 'tm_thread_end']
+
+            df = pd.DataFrame(data=data, columns=columns)
+            df = df[df['sender_name'] != 'Not provided']
+            dflist.append(df)
+
+        dfall = pd.concat(dflist, ignore_index=True)
+        dfall['channel'] = path_channel.split('/')[-1].split('.')[0]        
+        dfall = dfall.reset_index(drop=True)
+        
+        return dfall
+
+    def get_community_participation(path):
+        """ specify path to get json files"""
+        combined = []
+        comm_dict = {}
+        for json_file in glob.glob(f"{path}*.json"):
+            with open(json_file, 'r') as slack_data:
+                combined.append(slack_data)
+        # print(f"Total json files is {len(combined)}")
+        for i in combined:
+            a = json.load(open(i.name, 'r', encoding='utf-8'))
+
+            for msg in a:
+                if 'replies' in msg.keys():
+                    for i in msg['replies']:
+                        comm_dict[i['user']] = comm_dict.get(i['user'], 0)+1
+        return comm_dict
+
+
+    def get_tagged_users(df):
+        """get all @ in the messages"""
+
+        return df['msg_content'].map(lambda x: re.findall(r'@U\w+', x))
+
+    def map_userid_2_realname(user_profile: dict, comm_dict: dict, plot=False):
+        """
+        map slack_id to realnames
+        user_profile: a dictionary that contains users info such as real_names
+        comm_dict: a dictionary that contains slack_id and total_message sent by that slack_id
+        """
+        user_dict = {} # to store the id
+        real_name = [] # to store the real name
+        ac_comm_dict = {} # to store the mapping
+        count = 0
+        # collect all the real names
+        for i in range(len(user_profile['profile'])):
+            real_name.append(dict(user_profile['profile'])[i]['real_name'])
+
+        # loop the slack ids
+        for i in user_profile['id']:
+            user_dict[i] = real_name[count]
+            count += 1
+
+        # to store mapping
+        for i in comm_dict:
+            if i in user_dict:
+                ac_comm_dict[user_dict[i]] = comm_dict[i]
+
+        ac_comm_dict = pd.DataFrame(data= zip(ac_comm_dict.keys(), ac_comm_dict.values()),
+        columns=['LearnerName', '# of Msg sent in Threads']).sort_values(by='# of Msg sent in Threads', ascending=False)
+        
+        if plot:
+            ac_comm_dict.plot.bar(figsize=(15, 7.5), x='LearnerName', y='# of Msg sent in Threads')
+            plt.title('Student based on Message sent in thread', size=20)
+            
+        return ac_comm_dict
+
+    def get_top_20_user(data, channel='Random'):
+        """get user with the highest number of message sent to any channel"""
+
+        data['sender_name'].value_counts()[:20].plot.bar(figsize=(15, 7.5))
+        plt.title(f'Top 20 Message Senders in #{channel} channels', size=15, fontweight='bold')
+        plt.xlabel("Sender Name", size=18); plt.ylabel("Frequency", size=14);
+        plt.xticks(size=12); plt.yticks(size=12);
+        plt.show()
+
+        data['sender_name'].value_counts()[-10:].plot.bar(figsize=(15, 7.5))
+        plt.title(f'Bottom 10 Message Senders in #{channel} channels', size=15, fontweight='bold')
+        plt.xlabel("Sender Name", size=18); plt.ylabel("Frequency", size=14);
+        plt.xticks(size=12); plt.yticks(size=12);
+        plt.show()
+
+    def draw_avg_reply_count(data, channel='Random'):
+        """who commands many reply?"""
+
+        data.groupby('sender_name')['reply_count'].mean().sort_values(ascending=False)[:20]\
+            .plot(kind='bar', figsize=(15,7.5));
+        plt.title(f'Average Number of reply count per Sender in #{channel}', size=20, fontweight='bold')
+        plt.xlabel("Sender Name", size=18); plt.ylabel("Frequency", size=18);
+        plt.xticks(size=14); plt.yticks(size=14);
+        plt.show()
+
+    def draw_avg_reply_users_count(data, channel='Random'):
+        """who commands many user reply?"""
+
+        data.groupby('sender_name')['reply_users_count'].mean().sort_values(ascending=False)[:20].plot(kind='bar',
+        figsize=(15,7.5));
+        plt.title(f'Average Number of reply user count per Sender in #{channel}', size=20, fontweight='bold')
+        plt.xlabel("Sender Name", size=18); plt.ylabel("Frequency", size=18);
+        plt.xticks(size=14); plt.yticks(size=14);
+        plt.show()
+
+    def draw_wordcloud(msg_content, week):    
+        # word cloud visualization
+        allWords = ' '.join([twts for twts in msg_content])
+        wordCloud = WordCloud(background_color='#975429', width=500, height=300, random_state=21, max_words=500, mode='RGBA',
+                                max_font_size=140, stopwords=stopwords.words('english')).generate(allWords)
+        plt.figure(figsize=(15, 7.5))
+        plt.imshow(wordCloud, interpolation="bilinear")
+        plt.axis('off')
+        plt.tight_layout()
+        plt.title(f'WordCloud for {week}', size=30)
+        plt.show()
+
+    def draw_user_reaction(data, channel='General'):
+        data.groupby('sender_name')[['reply_count', 'reply_users_count']].sum()\
+            .sort_values(by='reply_count',ascending=False)[:10].plot(kind='bar', figsize=(15, 7.5))
+        plt.title(f'User with the most reaction in #{channel}', size=25);
+        plt.xlabel("Sender Name", size=18); plt.ylabel("Frequency", size=18);
+        plt.xticks(size=14); plt.yticks(size=14);
+        plt.show()
 
 
 if __name__ == "__main__":
