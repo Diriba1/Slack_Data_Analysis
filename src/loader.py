@@ -29,12 +29,12 @@ class SlackDataLoader:
     
     '''
     def __init__(self, path):
-        '''
-        path: path to the slack exported data folder
-        '''
+        
+        path: 'week0_starter_network_analysis/anonymized'
+        
         self.path = path
         self.channels = self.get_channels()
-        self.users = self.get_ussers()
+        self.users = self.get_users()
     
 
     def get_users(self):
