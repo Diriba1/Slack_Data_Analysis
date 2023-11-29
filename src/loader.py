@@ -7,6 +7,8 @@ import copy
 from datetime import datetime
 from pick import pick
 from time import sleep
+import glob
+import pandas as pd
 
 
 
@@ -76,7 +78,7 @@ class SlackDataLoader:
 
                 
         # combine all json file in all-weeks8-9
-    def slack_parser(path_channel):
+    def slack_parser(self, path_channel):
         """ parse slack data to extract useful informations from the json file
             step of execution
             1. Import the required modules
@@ -88,17 +90,16 @@ class SlackDataLoader:
         """
 
         # specify path to get json files
+        json_paths =  glob.glob(path_channel+"/all-week*/*.json")
         combined = []
-        for json_file in glob.glob(f"{path_channel}/all-week*/*.json"):
-            with open(json_file, 'r', encoding="utf8") as slack_data:
-                combined.append(slack_data)
-
+        for json_file in json_paths:
+            with open(json_file, 'r', encoding="utf8") as slk_data:
+                combined.append(json.load(slk_data))
+     
         # loop through all json files and extract required informations
         dflist = []
-        for slack_data in combined:
-
-            msg_type, msg_content, sender_id, time_msg, msg_dist, time_thread_st, reply_users, \
-            reply_count, reply_users_count, tm_thread_end = [],[],[],[],[],[],[],[],[],[]
+        for slack_data, jpath in zip(combined, json_paths):
+            msg_type, msg_content, sender_id, time_msg, msg_dist, time_thread_st, reply_users, reply_count, reply_users_count, tm_thread_end, channel_name = [],[],[],[],[],[],[],[],[],[],[]
 
             for row in slack_data:
                 if 'bot_id' in row.keys():
@@ -126,10 +127,11 @@ class SlackDataLoader:
                         reply_count.append(0)
                         reply_users_count.append(0)
                         tm_thread_end.append(0)
+                    channel_name.append(jpath.split('\\')[-2])
             data = zip(msg_type, msg_content, sender_id, time_msg, msg_dist, time_thread_st,
-            reply_count, reply_users_count, reply_users, tm_thread_end)
+            reply_count, reply_users_count, reply_users, tm_thread_end,channel_name)
             columns = ['msg_type', 'msg_content', 'sender_name', 'msg_sent_time', 'msg_dist_type',
-            'time_thread_start', 'reply_count', 'reply_users_count', 'reply_users', 'tm_thread_end']
+            'time_thread_start', 'reply_count', 'reply_users_count', 'reply_users', 'tm_thread_end','channel_name']
 
             df = pd.DataFrame(data=data, columns=columns)
             df = df[df['sender_name'] != 'Not provided']
@@ -251,6 +253,34 @@ class SlackDataLoader:
         plt.xlabel("Sender Name", size=18); plt.ylabel("Frequency", size=18);
         plt.xticks(size=14); plt.yticks(size=14);
         plt.show()
+    
+    def parse_slack_reaction(path, channel):
+        """get reactions"""
+        dfall_reaction = pd.DataFrame()
+        combined = []
+        for json_file in glob.glob(f"{path}*.json"):
+            with open(json_file, 'r') as slack_data:
+                combined.append(slack_data)
+
+        reaction_name, reaction_count, reaction_users, msg, user_id = [], [], [], [], []
+
+        for k in combined:
+            slack_data = json.load(open(k.name, 'r', encoding="utf-8"))
+            
+            for i_count, i in enumerate(slack_data):
+                if 'reactions' in i.keys():
+                    for j in range(len(i['reactions'])):
+                        msg.append(i['text'])
+                        user_id.append(i['user'])
+                        reaction_name.append(i['reactions'][j]['name'])
+                        reaction_count.append(i['reactions'][j]['count'])
+                        reaction_users.append(",".join(i['reactions'][j]['users']))
+                    
+        data_reaction = zip(reaction_name, reaction_count, reaction_users, msg, user_id)
+        columns_reaction = ['reaction_name', 'reaction_count', 'reaction_users_count', 'message', 'user_id']
+        df_reaction = pd.DataFrame(data=data_reaction, columns=columns_reaction)
+        df_reaction['channel'] = channel
+        return df_reaction
 
 
 if __name__ == "__main__":
