@@ -15,7 +15,8 @@ conn = psycopg2.connect(
 cur = conn.cursor()
 
 # Create tables
-cur.execute(CREATE TABLE IF NOT EXISTS messages (
+cur.execute(
+    CREATE TABLE IF NOT EXISTS messages (
     message_id SERIAL PRIMARY KEY,
     workspace_id VARCHAR(255),
     channel_id VARCHAR(255),
