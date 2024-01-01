@@ -1,5 +1,5 @@
 
-# Network Analysis Python Package
+# Network Analysis Slack Data
 
 ## Overview
 
